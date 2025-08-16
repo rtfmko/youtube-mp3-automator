@@ -1,5 +1,5 @@
 # === Configuration ===
-$installDir = "C:\yt-dlp"
+$installDir = Join-Path $env:LOCALAPPDATA "yt-dlp"
 $downloadsDir = Join-Path (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path "YouTubeMusic"
 
 # Create music folder if not exist
@@ -41,11 +41,25 @@ if (-not (Test-Path "$installDir\ffmpeg.exe")) {
 Write-Host "🎵 YouTube → MP3 (320 kbps) Downloader"
 Write-Host "Enter the link to YouTube (or q / e for exit)"
 
+$cookiesPath = $null  # store path to cookies if specified
+
 while ($true) {
-    $inputLine = Read-Host "🎥 Links or ID"
-    if ([string]::IsNullOrWhiteSpace($inputLine) -or $inputLine -eq "q" -or $inputLine -eq "quit" -or $inputLine -eq "e" -or $inputLine -eq "exit") {
+   $inputLine = Read-Host "🎥 Links, ID, or command (-c path/to/cookies.txt)"
+    if ([string]::IsNullOrWhiteSpace($inputLine) -or $inputLine -match '^(q|quit|e|exit)$') {
         Write-Host "👋 Exit..."
         break
+    }
+
+    # Checking the cookie installation command
+    if ($inputLine -match '^-c\s+(.+)$') {
+        $newPath = $Matches[1].Trim('"')
+        if (Test-Path $newPath) {
+            $cookiesPath = $newPath
+            Write-Host "🍪 Cookies set: $cookiesPath"
+        } else {
+            Write-Host "⚠ File not found: $newPath"
+        }
+        continue
     }
 
     # Split by spaces, commas, semicolons
@@ -59,8 +73,16 @@ while ($true) {
             $url = "https://www.youtube.com/watch?v=$url"
         }
 
-        Write-Host "⬇ Downloading: $url"
-        & "$installDir\yt-dlp.exe" -x --audio-format mp3 --audio-quality 320K -o "$downloadsDir\%(title)s.%(ext)s" "$url"
+         Write-Host "⬇ Downloading: $url"
+
+        $cmdArgs = @("-x", "--audio-format", "mp3", "--audio-quality", "320K", "-o", "$downloadsDir\%(title)s.%(ext)s", "$url")
+        
+        # Add cookies if any
+        if ($cookiesPath) {
+            $cmdArgs = @("--cookies", $cookiesPath) + $cmdArgs
+        }
+
+        & "$installDir\yt-dlp.exe" @cmdArgs
     }
 
     Write-Host "✅ Done! Files in: $downloadsDir"
