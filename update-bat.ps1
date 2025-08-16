@@ -44,7 +44,7 @@ foreach ($bat in $foundBats) {
 
     # --- Wait until the old bat is not running ---
     while (Get-Process | Where-Object { $_.Path -eq $bat.FullName }) {
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 100
     }
 
     try {
