@@ -8,6 +8,8 @@ set "scriptUrl=https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/re
 set "versionFileUrl=https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/refs/heads/main/version.txt"
 set "localVersionFile=%scriptDir%\version.txt"
 
+echo.
+
 :: === Create folder if not ===
 if not exist "%scriptDir%" mkdir "%scriptDir%"
 
@@ -30,7 +32,7 @@ if not "!remoteVersion!"=="!localVersion!" (
     powershell -NoProfile -Command "Invoke-WebRequest '%scriptUrl%' -OutFile '%scriptPath%' -UseBasicParsing"
     echo !remoteVersion! > "%localVersionFile%"
 ) else (
-    echo ✅ Script is up to date (version !localVersion!)
+    echo ✅ Script is up to date (version !localVersion!^)
 )
 
 :: === Delete the temporary file ===
@@ -38,3 +40,5 @@ del "%scriptDir%\version.tmp"
 
 :: === Run the script ===
 powershell -NoProfile -ExecutionPolicy Bypass -File "%scriptPath%"
+
+echo.
