@@ -4,8 +4,8 @@ setlocal enabledelayedexpansion
 :: === Configuration ===
 set "scriptDir=%LOCALAPPDATA%\yt-dlp"
 set "scriptPath=%scriptDir%\youtube-mp3.ps1"
-set "scriptUrl=https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/refs/heads/main/youtube-mp3.ps1"
-set "versionFileUrl=https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/refs/heads/main/version.txt"
+set "scriptUrl=https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/main/youtube-mp3.ps1"
+set "versionFileUrl=https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/main/version.txt"
 set "localVersionFile=%scriptDir%\version.txt"
 
 echo.
@@ -42,3 +42,4 @@ del "%scriptDir%\version.tmp"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%scriptPath%"
 
 echo.
+
