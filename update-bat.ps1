@@ -31,3 +31,21 @@ foreach ($bat in $foundBats) {
 # Cleanup
 # ==============================================
 
+# --- Remove old C:\yt-dlp folder ---
+try {
+    if (Test-Path "C:\yt-dlp") {
+        Remove-Item -Path "C:\yt-dlp" -Recurse -Force
+        Write-Host "🗑️  Old folder C:\yt-dlp removed." -ForegroundColor Gray
+    }
+} catch {
+    Write-Host "⚠ Failed to remove C:\yt-dlp: $_" -ForegroundColor Red
+}
+
+# --- Remove this update script itself ---
+try {
+    $selfPath = $MyInvocation.MyCommand.Path
+    Remove-Item -Path $selfPath -Force
+    Write-Host "🧹 Update script removed: $selfPath" -ForegroundColor Gray
+} catch {
+    Write-Host "⚠ Failed to remove update-bat.ps1: $_" -ForegroundColor Red
+}
