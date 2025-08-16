@@ -1,3 +1,28 @@
+# === Bat auto-update check ===
+$batPath = "$PSScriptRoot\youtube-mp3.bat"
+$versionFile = "$PSScriptRoot\version.txt"
+$updateScriptUrl = "https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/refs/heads/main/update-bat.ps1"
+$tmpUpdateScript = "$PSScriptRoot\update-bat.ps1"
+
+# Если version.txt нет — старый батник
+if (-not (Test-Path $versionFile)) {
+    Write-Host "⚠ Old bat detected, downloading updater..." -ForegroundColor Yellow
+
+    try {
+        Invoke-WebRequest $updateScriptUrl -OutFile $tmpUpdateScript -UseBasicParsing -ErrorAction Stop
+    } catch {
+        Write-Host "⚠ Failed to download updater, please update manually." -ForegroundColor Red
+        exit
+    }
+
+    Write-Host "🔄 Starting bat updater and exiting current session..." -ForegroundColor Green
+
+    # Запускаем update-bat.ps1 и закрываем текущий ps1
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tmpUpdateScript`"" -WindowStyle Hidden
+
+    exit
+}
+
 # =======================
 # Configuration
 # =======================
