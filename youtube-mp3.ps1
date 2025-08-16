@@ -1,7 +1,7 @@
 # === Bat auto-update check ===
 $batPath = "$PSScriptRoot\youtube-mp3.bat"
 $versionFile = "$PSScriptRoot\version.txt"
-$updateScriptUrl = "https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/refs/heads/main/update-bat.ps1"
+$updateScriptUrl = "https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/main/update-bat.ps1"
 $tmpUpdateScript = "$PSScriptRoot\update-bat.ps1"
 
 # Если version.txt нет — старый батник
