@@ -1,45 +1,30 @@
-@echo off
-setlocal enabledelayedexpansion
+﻿@echo off
+setlocal
 
-:: === Configuration ===
+:: Path to updater script on GitHub
+set "updaterUrl=https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/main/updater.ps1"
+
+:: Local script directory
 set "scriptDir=%LOCALAPPDATA%\yt-dlp"
-set "scriptPath=%scriptDir%\youtube-mp3.ps1"
-set "scriptUrl=https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/main/youtube-mp3.ps1"
-set "versionFileUrl=https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/main/version.txt"
-set "localVersionFile=%scriptDir%\version.txt"
+set "updaterPath=%scriptDir%\updater.ps1"
 
-echo.
-
-:: === Create folder if not ===
+:: Ensure script directory exists
 if not exist "%scriptDir%" mkdir "%scriptDir%"
 
-:: === Download the version from GitHub to a temporary file ===
-powershell -NoProfile -Command ^
-    "Invoke-WebRequest -Uri '%versionFileUrl%' -OutFile '%scriptDir%\version.tmp' -UseBasicParsing -ErrorAction SilentlyContinue"
+:: Check if updater.ps1 exists
+if not exist "%updaterPath%" (
+    echo 🔄 updater.ps1 not found, downloading...
+    powershell -NoProfile -Command ^
+        "try { Invoke-WebRequest -Uri '%updaterUrl%' -OutFile '%updaterPath%' -UseBasicParsing -ErrorAction Stop } catch { exit 1 }"
 
-:: === Read the remote version and remove BOM/invisible characters ===
-for /f "usebackq tokens=* delims=" %%A in (`powershell -NoProfile -Command ^
-    "(Get-Content '%scriptDir%\version.tmp' -Raw).Trim()"`) do set "remoteVersion=%%A"
-
-:: === Read the local version and remove BOM/invisible characters ===
-set "localVersion="
-if exist "%localVersionFile%" for /f "usebackq tokens=* delims=" %%A in (`powershell -NoProfile -Command ^
-    "(Get-Content '%localVersionFile%' -Raw).Trim()"`) do set "localVersion=%%A"
-
-:: === Compare versions ===
-if not "!remoteVersion!"=="!localVersion!" (
-    echo 🔄 Updating script to version !remoteVersion!...
-    powershell -NoProfile -Command "Invoke-WebRequest '%scriptUrl%' -OutFile '%scriptPath%' -UseBasicParsing"
-    echo !remoteVersion! > "%localVersionFile%"
-) else (
-    echo ✅ Script is up to date (version !localVersion!^)
+    if errorlevel 1 (
+        echo ❌ Failed to download updater.ps1
+        pause
+        exit /b
+    )
 )
 
-:: === Delete the temporary file ===
-del "%scriptDir%\version.tmp"
+:: Run updater.ps1 and pass scriptDir as argument
+powershell -NoProfile -ExecutionPolicy Bypass -File "%updaterPath%" -scriptDir "%scriptDir%"
 
-:: === Run the script ===
-powershell -NoProfile -ExecutionPolicy Bypass -File "%scriptPath%"
-
-echo.
-
+endlocal
