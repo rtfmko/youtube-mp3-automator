@@ -1,0 +1,18 @@
+﻿v0.0.1
+- Initial release
+- Basic YouTube → MP3 download functionality
+
+v0.0.2
+- Refactored code for better readability and maintainability
+- Added translations (en/uk/ru)
+- Added multi-download mode
+
+v0.0.3
+- Updated YouTube URL handling to use main URLs
+- Minor bug fixes
+
+v0.0.4
+- Fixed issue with UTF-8 download paths
+- Added support for changing language via -l en/uk/ru
+- Improved multi-download progress display
+- Added select download folder
