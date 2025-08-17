@@ -1,36 +1,20 @@
-# === Bat auto-update check ===
-$batPath = "$PSScriptRoot\youtube-mp3.bat"
-$versionFile = "$PSScriptRoot\version.txt"
-$updateScriptUrl = "https://raw.githubusercontent.com/rtfmko/youtube-mp3-automator/main/update-bat.ps1"
-$tmpUpdateScript = "$PSScriptRoot\update-bat.ps1"
-
-# Если version.txt нет — старый батник
-if (-not (Test-Path $versionFile)) {
-    Write-Host "⚠ Old bat detected, downloading updater..." -ForegroundColor Yellow
-
-    try {
-        Invoke-WebRequest $updateScriptUrl -OutFile $tmpUpdateScript -UseBasicParsing -ErrorAction Stop
-    } catch {
-        Write-Host "⚠ Failed to download updater, please update manually." -ForegroundColor Red
-        exit
-    }
-
-    Write-Host "🔄 Starting bat updater and exiting current session..." -ForegroundColor Green
-
-    # Запускаем update-bat.ps1 и закрываем текущий ps1
-    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tmpUpdateScript`"" -WindowStyle Hidden
-
-    exit
-}
-
-# =======================
+﻿# =======================
 # Configuration
 # =======================
 $installDir = Join-Path $env:LOCALAPPDATA "yt-dlp"
-$downloadsDir = Join-Path (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path "YouTubeMusic"
+$optionsFile = Join-Path $installDir "options.txt"
 $cookiesPath = $null       # Store path to cookies if specified
 $maxParallel = 5           # Max parallel count for multi (-m) mode
-$optionsFile = Join-Path $installDir "options.txt"
+
+# Try to detect default Downloads\YouTubeMusic path
+function Get-DefaultDownloads {
+    try {
+        return Join-Path (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path "YouTubeMusic"
+    } catch {
+        # fallback: C:\Users\<User>\Downloads\YouTubeMusic
+        return Join-Path ([Environment]::GetFolderPath("UserProfile")) "Downloads\YouTubeMusic"
+    }
+}
 
 # =======================
 # Localization
@@ -40,12 +24,14 @@ $loc = @{
         "commandsHeader" = "`n💡 Commands:"
         "commands" = @(
             "  📥 Enter YouTube links or IDs separated by space, comma, or semicolon",
-            "  🍪 -c <path>  → Set cookies file",
-            "  ⚡ -s         → Single download mode (one by one)",
-            "  ⚡ -m [N]     → Multi download mode (parallel downloads), optional N = 2-12, default 5",
-			"  📂 -o         → Open downloads folder"
-            "  🧹 clear      → Clear console",
-            "  ❌ q, e       → Exit script"
+            "  🍪 -c <path>       → Set cookies file",
+            "  ⚡ -s              → Single download mode (one by one)",
+            "  ⚡ -m [N]          → Multi download mode (parallel downloads), optional N = 2-12, default 5",
+			"  📂 -o              → Open downloads folder"
+			"  📂 -dir <p>        → Set custom downloads folder",
+			"  🌐 -l <en|uk|ru>   → Change interface language"
+            "  🧹 clear           → Clear console",
+            "  ❌ q, e            → Exit script"
         )
         "promptInput" = "`n🎥 Links, IDs, or command"
         "clearing" = "🧹 Clearing..."
@@ -70,17 +56,20 @@ $loc = @{
 		"folderNotFound" = "⚠ Folder not found:"
 		"cookieUsed" = "🍪 Using cookie: {0}"
 		"cookieNotUsed" = "🍪 No cookie used for this session"
+		"langSet" = "🌐 Language set to:"
     }
     "uk" = @{
         "commandsHeader" = "`n💡 Команди:"
         "commands" = @(
             "  📥 Введіть посилання YouTube або ID, розділені пробілом, комою або крапкою з комою",
-            "  🍪 -c <шлях>  → Встановити файл cookie",
-            "  ⚡ -s         → Режим одиночного завантаження",
-            "  ⚡ -m [N]     → Режим множинного завантаження (паралельні завантаження), необов’язково N = 2-12, за замовчуванням 5",
-			"  📂 -o         → Відкрити папку завантажень"
-            "  🧹 clear      → Очистити консоль",
-            "  ❌ q, e       → Вихід із скрипту"
+            "  🍪 -c <шлях>       → Встановити файл cookie",
+            "  ⚡ -s              → Режим одиночного завантаження",
+            "  ⚡ -m [N]          → Режим множинного завантаження (паралельні завантаження), необов’язково N = 2-12, за замовчуванням 5",
+			"  📂 -o              → Відкрити папку завантажень"
+			"  📂 -dir <p>        → Встановити власну теку завантажень",
+			"  🌐 -l <en|uk|ru>   → Змінити мову інтерфейсу",
+            "  🧹 clear           → Очистити консоль",
+            "  ❌ q, e            → Вихід із скрипту"
         )
         "promptInput" = "`n🎥 Посилання, ID або команда"
         "clearing" = "🧹 Очищення..."
@@ -105,17 +94,20 @@ $loc = @{
 		"folderNotFound" = "⚠ Папку не знайдено:"
 		"cookieUsed" = "🍪 Використовується cookie: {0}"
 		"cookieNotUsed" = "🍪 Cookie не використовується у цій сесії"
+		"langSet" = "🌐 Мову змінено на:"
     }
     "ru" = @{
         "commandsHeader" = "`n💡 Команды:"
         "commands" = @(
             "  📥 Введите ссылки YouTube или ID через пробел, запятую или точку с запятой",
-            "  🍪 -c <путь>  → Установить файл cookie",
-            "  ⚡ -s         → Режим одиночной загрузки",
-            "  ⚡ -m [N]     → Режим множественной загрузки (параллельные загрузки), необязательно N = 2-12, по умолчанию 5",
-			"  📂 -o         → Открыть папку загрузок"
-            "  🧹 clear      → Очистить консоль",
-            "  ❌ q, e       → Выход из скрипта"
+            "  🍪 -c <путь>       → Установить файл cookie",
+            "  ⚡ -s              → Режим одиночной загрузки",
+            "  ⚡ -m [N]          → Режим множественной загрузки (параллельные загрузки), необязательно N = 2-12, по умолчанию 5",
+			"  📂 -o              → Открыть папку загрузок"
+			"  📂 -dir <p>        → Установить свою папку загрузок",
+			"  🌐 -l <en|uk|ru>   → Сменить язык интерфейса",
+            "  🧹 clear           → Очистить консоль",
+            "  ❌ q, e            → Выход из скрипта"
         )
         "promptInput" = "`n🎥 Ссылки, ID или команда"
         "clearing" = "🧹 Очистка..."
@@ -140,14 +132,9 @@ $loc = @{
 		"folderNotFound" = "⚠ Папку не найдено:"
 		"cookieUsed" = "🍪 Используется cookie: {0}"
 		"cookieNotUsed" = "🍪 Cookie не используется в этой сессии"
+		"langSet" = "🌐 Язык изменён на:"
     }
 }
-
-# =======================
-# Detect UI language
-# =======================
-$uiLang = (Get-UICulture).TwoLetterISOLanguageName
-$lang = if ($loc.ContainsKey($uiLang)) { $uiLang } else { "en" }
 
 # =======================
 # Helper Functions
@@ -180,7 +167,7 @@ function Install-FFmpeg { param([string]$InstallDir)
 
 # Load options safely
 function Load-Options { param([string]$FilePath)
-    $options = @{ downloadMode = "single"; maxParallel = 5 }
+    $options = @{ downloadMode = "single"; maxParallel = 5; downloadsDir = $null }
     if (-not (Test-Path $FilePath)) { return $options }
     try {
         Get-Content $FilePath | ForEach-Object {
@@ -194,10 +181,24 @@ function Load-Options { param([string]$FilePath)
 # Save options safely
 function Save-Options { param([string]$FilePath, [hashtable]$Options)
     try {
-        if (Test-Path $FilePath) { $attribs = (Get-Item $FilePath).Attributes; if ($attribs -band [System.IO.FileAttributes]::ReadOnly) { (Get-Item $FilePath).Attributes = $attribs -bxor [System.IO.FileAttributes]::ReadOnly } }
+        if (Test-Path $FilePath) {
+            $attribs = (Get-Item $FilePath).Attributes
+            if ($attribs -band [System.IO.FileAttributes]::ReadOnly) {
+                (Get-Item $FilePath).Attributes = $attribs -bxor [System.IO.FileAttributes]::ReadOnly
+            }
+        }
         $Options.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } | Set-Content -Path $FilePath -Force
         (Get-Item $FilePath).Attributes = (Get-Item $FilePath).Attributes -bor [System.IO.FileAttributes]::ReadOnly
     } catch { Write-Host $loc[$lang].failedSaveOptions }
+}
+
+function Detect-Language {
+    $sysLang = (Get-Culture).TwoLetterISOLanguageName
+    switch ($sysLang) {
+        "ru" { return "ru" }
+        "uk" { return "uk" }
+        default { return "en" }
+    }
 }
 
 # Show selected mode
@@ -210,7 +211,6 @@ function Show-SelectedMode { param([string]$Mode,[int]$Parallel)
 # Initialize
 # =======================
 Ensure-Folder $installDir
-Ensure-Folder $downloadsDir
 Install-YtDlp $installDir
 Install-FFmpeg $installDir
 
@@ -218,6 +218,25 @@ Install-FFmpeg $installDir
 $options = Load-Options -FilePath $optionsFile
 $downloadMode = $options.downloadMode
 $maxParallel = [int]$options.maxParallel
+
+if (-not $options.downloadsDir -or -not (Test-Path (Split-Path $options.downloadsDir -Parent))) {
+    $downloadsDir = Get-DefaultDownloads
+    $options.downloadsDir = $downloadsDir
+    Save-Options -FilePath $optionsFile -Options $options
+} else {
+    $downloadsDir = $options.downloadsDir
+}
+Ensure-Folder $downloadsDir
+
+# Initialize language
+if ($options.lang) {
+    $lang = $options.lang
+} else {
+    $lang = Detect-Language
+    $options.lang = $lang
+    Save-Options -FilePath $optionsFile -Options $options
+}
+
 
 # Show header
 function Show-Header {
@@ -230,6 +249,7 @@ function Show-Header {
 	} else {
 		Write-Host ($loc[$lang].cookieNotUsed) -ForegroundColor DarkGray
 	}
+	Write-Host "📂 Download folder: $downloadsDir" -ForegroundColor Green
 
 	# Commands list
 	Write-Host $loc[$lang].commandsHeader -ForegroundColor White
@@ -258,7 +278,31 @@ while ($true) {
 			Write-Host $loc[$lang].folderNotFound$downloadsDir -ForegroundColor Red
 		}
 		continue
-}
+	}
+	
+	# Change downloads folder
+    if ($inputLine -match '^-dir\s+(.+)$') {
+        $newDir = $Matches[1].Trim('"')
+        Ensure-Folder $newDir
+        $downloadsDir = $newDir
+        $options.downloadsDir = $downloadsDir
+        Save-Options -FilePath $optionsFile -Options $options
+        Write-Host "$($loc[$lang].dirSet) $downloadsDir" -ForegroundColor Green
+        continue
+    }
+
+	# Change language
+    if ($inputLine -match '^-l\s+(en|uk|ru)$') {
+        $newLang = $Matches[1]
+        $lang = $newLang
+        $options.lang = $lang
+        Save-Options -FilePath $optionsFile -Options $options
+		Clear-Host; 
+		Write-Host "$($loc[$lang].langSet ) $lang" -ForegroundColor Blue
+        Show-Header
+        continue
+    }
+
 
     # Clear console
     if ($inputLine -match '^(clear|clean)$') { 
