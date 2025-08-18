@@ -2,3 +2,7 @@
 - Initial release of updater script
 - Supports auto-update of loader, updater, and launcher
 - Added backup & restore mechanism
+
+V0.0.2
+- version.txt is now set to read-only after updates (protected from accidental edits)
+- update_history.log is automatically trimmed to the last 500 lines
