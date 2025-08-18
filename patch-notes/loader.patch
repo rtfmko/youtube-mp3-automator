@@ -16,3 +16,6 @@ v0.0.4
 - Added support for changing language via -l en/uk/ru
 - Improved multi-download progress display
 - Added select download folder
+
+v0.0.5
+- Added reinstall yt-dlp and ffmpeg via -r
