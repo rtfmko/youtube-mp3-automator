@@ -27,7 +27,16 @@ function Write-Log($message, $level="INFO") {
         "WARN"    { Write-Host "⚠ $message" -ForegroundColor Yellow }
         "ERROR"   { Write-Host "❌ $message" -ForegroundColor Red }
     }
+
     "$([DateTime]::Now) [$level] $message" | Out-File -FilePath $updateHistoryFile -Append -Encoding UTF8
+
+    # Trim log to last 500 lines
+    if (Test-Path $updateHistoryFile) {
+        $lines = Get-Content $updateHistoryFile
+        if ($lines.Count -gt 500) {
+            $lines[-500..-1] | Set-Content $updateHistoryFile -Force -Encoding UTF8
+        }
+    }
 }
 
 function Backup-File($filePath) {
@@ -84,17 +93,27 @@ function Download-Component($component, $fileName) {
     }
 }
 
-function Show-PatchNotes($component) {
-    $patchUrl = "$baseUrl$component.patch"
+function Show-PatchNotes($file){
+    $patchFileName = switch ($file) {
+		"youtube-mp3.ps1" { "loader.patch" }
+		"updater.ps1"     { "updater.patch" }
+		"youtube-mp3.bat" { "launcher.patch" }
+		default           { "$file.patch" }
+	}
+	
+	$patchUrl = "$baseUrl" + "patch-notes/$patchFileName"
     try {
         $content = Invoke-WebRequest $patchUrl -UseBasicParsing -ErrorAction Stop
         $notes = $content.Content.Trim()
         if ($notes) {
-            Write-Host "`n📌 Patch notes for ${component}:`n" -ForegroundColor Cyan
+            Write-Host "`n📌 Patch notes for ${file}:`n" -ForegroundColor Cyan
             $notes -split "`n" | ForEach-Object { Write-Host "  $_" -ForegroundColor White }
-            Write-Host ""
+        } else {
+            Write-Host "`n📌 Patch notes for ${file}: None`n" -ForegroundColor Cyan
         }
-    } catch { }
+    } catch {
+        Write-Host "`n📌 Patch notes for ${file}: None`n" -ForegroundColor Cyan
+    }
 }
 
 # ----------------------
@@ -103,7 +122,7 @@ function Show-PatchNotes($component) {
 Ensure-Folder $ScriptDir
 Ensure-Folder $backupDir
 
-# Parse force flag if any: force=loader,updater
+# Parse force flag if any: force=loader,updater,launcher
 $forceComponents = @()
 foreach ($arg in $args) {
     if ($arg -match '^force=(.+)$') { $forceComponents = $Matches[1].Split(",") }
@@ -128,16 +147,40 @@ foreach ($comp in $components.Keys) {
 if ($updatesNeeded.Count -eq 0) {
     Write-Log "All components are up-to-date." "SUCCESS"
 } else {
-    # Ask user for confirmation unless forced
+    # Interactive update loop with proper skip all / update all
     $toUpdate = @()
-    foreach ($comp in $updatesNeeded) {
-        if ($forceComponents -contains $comp) {
-            Write-Log "Force update applied for $comp." "WARN"
-            $toUpdate += $comp
-        } else {
-            $answer = Read-Host "Update $comp? (y/n)"
-            if ($answer -match '^(y|yes)$') { $toUpdate += $comp }
+    $skipAll = $false
+    $updateAll = $false
+    $i = 0
+
+    Write-Host "`n📌 Update options:"
+    Write-Host "  y → Update this component"
+    Write-Host "  n → Skip this component"
+    Write-Host "  a → Update all remaining components automatically"
+    Write-Host "  s → Skip all remaining components"
+    Write-Host "  q → Quit updater`n"
+
+    while ($i -lt $updatesNeeded.Count) {
+        $comp = $updatesNeeded[$i]
+
+        if ($skipAll) { $i++; continue }
+        if ($updateAll) { $toUpdate += $comp; $i++; continue }
+
+        $answer = Read-Host "Update $comp [y/n/a/s/q]"
+        switch ($answer.ToLower()) {
+            'y' { $toUpdate += $comp }
+            'n' { Write-Log "User skipped $comp" "INFO" }
+            'a' { 
+                $updateAll = $true
+                $toUpdate += $comp
+            }
+            's' { 
+                $skipAll = $true
+            }
+            'q' { break }
+            default { Write-Host "Invalid input. Continue..."; continue }
         }
+        $i++
     }
 
     foreach ($comp in $toUpdate) {
@@ -150,8 +193,16 @@ if ($updatesNeeded.Count -eq 0) {
         else { $localVersions[$comp] = $remoteVersions[$comp] }
     }
 
-    # Save updated local version file
-    $localVersions.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } | Set-Content -Path $localVersionFile -Force
+	# Save updated local version file (with read-only toggle)
+		if (Test-Path $localVersionFile) {
+			Attrib -R $localVersionFile
+		}
+
+		$localVersions.GetEnumerator() |
+			ForEach-Object { "$($_.Key)=$($_.Value)" } |
+			Set-Content -Path $localVersionFile -Force -Encoding UTF8
+
+		Attrib +R $localVersionFile
 }
 
 # ----------------------
