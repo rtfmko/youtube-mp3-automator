@@ -153,12 +153,13 @@ if ($updatesNeeded.Count -eq 0) {
     $updateAll = $false
     $i = 0
 
-    Write-Host "`n📌 Update options:"
-    Write-Host "  y → Update this component"
-    Write-Host "  n → Skip this component"
-    Write-Host "  a → Update all remaining components automatically"
-    Write-Host "  s → Skip all remaining components"
-    Write-Host "  q → Quit updater`n"
+    Write-Host "`n📌 Update options:`n" -ForegroundColor Cyan
+	Write-Host "   y → Update this component" -ForegroundColor Green
+	Write-Host "   n → Skip this component" -ForegroundColor Yellow
+	Write-Host "   a → Update all remaining components automatically" -ForegroundColor Magenta
+	Write-Host "   s → Skip all remaining components" -ForegroundColor DarkYellow
+	Write-Host "   q → Quit updater`n" -ForegroundColor Red
+
 
     while ($i -lt $updatesNeeded.Count) {
         $comp = $updatesNeeded[$i]
@@ -177,7 +178,10 @@ if ($updatesNeeded.Count -eq 0) {
             's' { 
                 $skipAll = $true
             }
-            'q' { break }
+            'q' { 
+				$skipAll = $true
+				break 
+			}
             default { Write-Host "Invalid input. Continue..."; continue }
         }
         $i++
