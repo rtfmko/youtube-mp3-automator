@@ -3,10 +3,14 @@
 - Supports auto-update of loader, updater, and launcher
 - Added backup & restore mechanism
 
-V0.0.2
+v0.0.2
 - version.txt is now set to read-only after updates (protected from accidental edits)
 - update_history.log is automatically trimmed to the last 500 lines
 
-V0.0.3
+v0.0.3
 - Added colors to update options
 - Fix q option for skip all and quit
+
+v0.0.3
+- Fix correct .bat update
+- Added read-only
