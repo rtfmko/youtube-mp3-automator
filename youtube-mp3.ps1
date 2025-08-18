@@ -27,6 +27,7 @@ $loc = @{
             "  🍪 -c <path>       → Set cookies file",
             "  ⚡ -s              → Single download mode (one by one)",
             "  ⚡ -m [N]          → Multi download mode (parallel downloads), optional N = 2-12, default 5",
+			"  ♻  -r              → Reinstall yt-dlp and ffmpeg",
 			"  📂 -o              → Open downloads folder"
 			"  📂 -dir <p>        → Set custom downloads folder",
 			"  🌐 -l <en|uk|ru>   → Change interface language"
@@ -57,6 +58,7 @@ $loc = @{
 		"cookieUsed" = "🍪 Using cookie: {0}"
 		"cookieNotUsed" = "🍪 No cookie used for this session"
 		"langSet" = "🌐 Language set to:"
+		"reinstall" = "♻  Reinstalling yt-dlp and ffmpeg..."
     }
     "uk" = @{
         "commandsHeader" = "`n💡 Команди:"
@@ -65,6 +67,7 @@ $loc = @{
             "  🍪 -c <шлях>       → Встановити файл cookie",
             "  ⚡ -s              → Режим одиночного завантаження",
             "  ⚡ -m [N]          → Режим множинного завантаження (паралельні завантаження), необов’язково N = 2-12, за замовчуванням 5",
+			"  ♻  -r              → Перевстановити yt-dlp та ffmpeg",
 			"  📂 -o              → Відкрити папку завантажень"
 			"  📂 -dir <p>        → Встановити власну теку завантажень",
 			"  🌐 -l <en|uk|ru>   → Змінити мову інтерфейсу",
@@ -95,6 +98,7 @@ $loc = @{
 		"cookieUsed" = "🍪 Використовується cookie: {0}"
 		"cookieNotUsed" = "🍪 Cookie не використовується у цій сесії"
 		"langSet" = "🌐 Мову змінено на:"
+		"reinstall" = "♻  Перевстановлення yt-dlp та ffmpeg..."
     }
     "ru" = @{
         "commandsHeader" = "`n💡 Команды:"
@@ -103,6 +107,7 @@ $loc = @{
             "  🍪 -c <путь>       → Установить файл cookie",
             "  ⚡ -s              → Режим одиночной загрузки",
             "  ⚡ -m [N]          → Режим множественной загрузки (параллельные загрузки), необязательно N = 2-12, по умолчанию 5",
+			"  ♻  -r              → Переустановить yt-dlp и ffmpeg",
 			"  📂 -o              → Открыть папку загрузок"
 			"  📂 -dir <p>        → Установить свою папку загрузок",
 			"  🌐 -l <en|uk|ru>   → Сменить язык интерфейса",
@@ -133,6 +138,7 @@ $loc = @{
 		"cookieUsed" = "🍪 Используется cookie: {0}"
 		"cookieNotUsed" = "🍪 Cookie не используется в этой сессии"
 		"langSet" = "🌐 Язык изменён на:"
+		"reinstall" = "♻  Переустановка yt-dlp и ffmpeg..."
     }
 }
 
@@ -191,42 +197,25 @@ function Save-Options { param([string]$FilePath, [hashtable]$Options)
         (Get-Item $FilePath).Attributes = (Get-Item $FilePath).Attributes -bor [System.IO.FileAttributes]::ReadOnly
     } catch { Write-Host $loc[$lang].failedSaveOptions }
 }
-
-function Detect-Language {
-    $sysLang = (Get-Culture).TwoLetterISOLanguageName
-    switch ($sysLang) {
-        "ru" { return "ru" }
-        "uk" { return "uk" }
-        default { return "en" }
-    }
-}
-
 # Show selected mode
 function Show-SelectedMode { param([string]$Mode,[int]$Parallel)
     if ($Mode -eq "single") { Write-Host ($loc[$lang].selectedModeSingle -f $Mode) -ForegroundColor Cyan }
     else { Write-Host ($loc[$lang].selectedModeMulti -f $Mode, $Parallel) -ForegroundColor Green }
 }
 
-# =======================
-# Initialize
-# =======================
-Ensure-Folder $installDir
-Install-YtDlp $installDir
-Install-FFmpeg $installDir
-
 # Load options
 $options = Load-Options -FilePath $optionsFile
 $downloadMode = $options.downloadMode
 $maxParallel = [int]$options.maxParallel
 
-if (-not $options.downloadsDir -or -not (Test-Path (Split-Path $options.downloadsDir -Parent))) {
-    $downloadsDir = Get-DefaultDownloads
-    $options.downloadsDir = $downloadsDir
-    Save-Options -FilePath $optionsFile -Options $options
-} else {
-    $downloadsDir = $options.downloadsDir
+function Detect-Language {
+    $sysLang = (Get-Culture).TwoLetterISOLanguageName
+    switch ($sysLang) {
+		"uk" { return "uk" }
+        "ru" { return "ru" }
+        default { return "en" }
+    }
 }
-Ensure-Folder $downloadsDir
 
 # Initialize language
 if ($options.lang) {
@@ -236,6 +225,23 @@ if ($options.lang) {
     $options.lang = $lang
     Save-Options -FilePath $optionsFile -Options $options
 }
+
+
+# =======================
+# Initialize
+# =======================
+Ensure-Folder $installDir
+Install-YtDlp $installDir
+Install-FFmpeg $installDir
+
+if (-not $options.downloadsDir -or -not (Test-Path (Split-Path $options.downloadsDir -Parent))) {
+    $downloadsDir = Get-DefaultDownloads
+    $options.downloadsDir = $downloadsDir
+    Save-Options -FilePath $optionsFile -Options $options
+} else {
+    $downloadsDir = $options.downloadsDir
+}
+Ensure-Folder $downloadsDir
 
 
 # Show header
@@ -268,6 +274,20 @@ while ($true) {
     $inputLine = Read-Host $loc[$lang].promptInput
 
     if ([string]::IsNullOrWhiteSpace($inputLine) -or $inputLine -match '^(q|quit|e|exit)$') { Write-Host $loc[$lang].exiting; break }
+	
+	# Handle -r (reinstall yt-dlp and ffmpeg)
+	if ($inputLine -eq "-r") {
+		Write-Host $loc[$lang].reinstall -ForegroundColor Cyan
+		$ytDlpPath = Join-Path $installDir "yt-dlp.exe"
+		$ffmpegPath = Join-Path $installDir "ffmpeg.exe"
+		if (Test-Path $ytDlpPath) { Remove-Item $ytDlpPath -Force }
+		if (Test-Path $ffmpegPath) { Remove-Item $ffmpegPath -Force }
+		Install-YtDlp $installDir
+		Install-FFmpeg $installDir
+		Clear-Host;
+		Show-Header
+		continue
+	}
 	
 	# Open downloads folder
 	if ($inputLine -match '^-o$') {
