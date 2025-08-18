@@ -11,6 +11,7 @@ v0.0.3
 - Added colors to update options
 - Fix q option for skip all and quit
 
-v0.0.3
+v0.0.4
 - Fix correct .bat update
 - Added read-only
+
