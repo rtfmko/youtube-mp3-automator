@@ -1,3 +1,7 @@
 ﻿v0.0.1
 - Initial batch launcher
 - Downloads updater.ps1 if missing and executes it
+
+v0.0.2
+- Added get.bat path to update
+- Added read-only
