@@ -1,5 +1,6 @@
 ﻿param(
-    [string]$ScriptDir
+    [string]$ScriptDir,
+	[string]$BatDir
 )
 
 # ----------------------
@@ -81,10 +82,22 @@ function Get-LocalVersions() {
 
 function Download-Component($component, $fileName) {
     $url = "$baseUrl$fileName"
-    $dest = Join-Path $ScriptDir $fileName
+	if ($component -eq "launcher") {
+		$dest = Join-Path $BatDir $fileName	
+	} else {
+		$dest = Join-Path $ScriptDir $fileName	
+	}
     try {
         Write-Log "Downloading $component from $url ..."
+        
+        # remove read-only if exists
+        if (Test-Path $dest) { Attrib -R $dest }
+        
         Invoke-WebRequest $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+        
+        # set file to read-only after download
+        Attrib +R $dest
+
         Write-Log "$component updated successfully." "SUCCESS"
         return $true
     } catch {
@@ -121,6 +134,32 @@ function Show-PatchNotes($file){
 # ----------------------
 Ensure-Folder $ScriptDir
 Ensure-Folder $backupDir
+
+# If no local version file exists, bootstrap loader & updater
+if (-not (Test-Path $localVersionFile)) {
+    Write-Log "Local version file not found. Bootstrapping initial setup..." "WARN"
+    $remoteVersions = Get-RemoteVersions
+    if ($remoteVersions) {
+        foreach ($comp in @("loader","updater","launcher")) {
+            $fileName = $components[$comp]
+            Download-Component $comp $fileName | Out-Null
+        }
+        # Save minimal version file and set read-only
+        $remoteVersions.GetEnumerator() |
+            ForEach-Object { "$($_.Key)=$($_.Value)" } |
+            Set-Content -Path $localVersionFile -Force -Encoding UTF8
+        Attrib +R $localVersionFile
+        Write-Log "Bootstrap complete. Launching loader..." "SUCCESS"
+        $loaderPath = Join-Path $ScriptDir $components.loader
+        if (Test-Path $loaderPath) {
+            Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$loaderPath`""
+            exit
+        }
+    } else {
+        Write-Log "Cannot bootstrap without remote version info!" "ERROR"
+        exit 1
+    }
+}
 
 # Parse force flag if any: force=loader,updater,launcher
 $forceComponents = @()
