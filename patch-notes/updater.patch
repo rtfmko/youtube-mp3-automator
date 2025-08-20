@@ -24,3 +24,10 @@ v0.0.5
 v0.0.6
 - HotFix
 - Changed launch component name
+
+v0.0.7
+- HotFix
+- Added conditional restart: updater restarts itself only if it was updated.
+- Added force update
+- Fix skip updates
+- Launcher now removed/created in BatDir instead of ScriptDir.
