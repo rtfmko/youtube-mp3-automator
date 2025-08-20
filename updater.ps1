@@ -13,9 +13,9 @@ $backupDir = Join-Path $ScriptDir "backup"
 $updateHistoryFile = Join-Path $ScriptDir "update_history.log"
 
 $components = @{
-    loader = "youtube-mp3.ps1"
+    loader = "youtube-downloader.ps1"
     updater = "updater.ps1"
-    launcher = "youtube-mp3.bat"
+    launcher = "youtube-downloader.bat"
 }
 
 # ----------------------
