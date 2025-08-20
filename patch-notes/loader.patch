@@ -19,3 +19,12 @@ v0.0.4
 
 v0.0.5
 - Added reinstall yt-dlp and ffmpeg via -r
+
+v0.0.6
+- Added video download
+- Added select video quality
+- Added pretty log
+- Added logs file
+- Added reinstall yl-dlp and ffmpeg option
+- Fix get Download folder
+- Changed youtube-mp3 to youtube-downloader
