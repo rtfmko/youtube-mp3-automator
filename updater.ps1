@@ -18,12 +18,18 @@ $components = @{
     launcher = "youtube-downloader.bat"
 }
 
+# Old component mapping for backward compatibility
+$legacyComponents = @{
+    "youtube-mp3.ps1" = "youtube-downloader.ps1"
+    "youtube-mp3.bat" = "youtube-downloader.bat"
+}
+
 # ----------------------
 # Functions
 # ----------------------
 function Write-Log($message, $level="INFO") {
     switch ($level) {
-        "INFO"    { Write-Host "ℹ $message" -ForegroundColor White }
+        "INFO"    { Write-Host "ℹ  $message" -ForegroundColor White }
         "SUCCESS" { Write-Host "✅ $message" -ForegroundColor Green }
         "WARN"    { Write-Host "⚠ $message" -ForegroundColor Yellow }
         "ERROR"   { Write-Host "❌ $message" -ForegroundColor Red }
@@ -90,12 +96,10 @@ function Download-Component($component, $fileName) {
     try {
         Write-Log "Downloading $component from $url ..."
         
-        # remove read-only if exists
         if (Test-Path $dest) { Attrib -R $dest }
         
         Invoke-WebRequest $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
         
-        # set file to read-only after download
         Attrib +R $dest
 
         Write-Log "$component updated successfully." "SUCCESS"
@@ -135,7 +139,6 @@ function Show-PatchNotesByVersion($file, $localVersion, $remoteVersion) {
         foreach ($line in $notes -split "`n") {
             if ($line -match '^v([0-9\.]+)') {
                 $ver = $Matches[1]
-                # Если версия больше текущей, начинаем показывать
                 if ([version]$ver -gt [version]$currentVersion) { $show = $true } 
                 else { $show = $false }
             }
@@ -148,7 +151,6 @@ function Show-PatchNotesByVersion($file, $localVersion, $remoteVersion) {
         Write-Host "`n📌 Patch notes for ${file}: None`n" -ForegroundColor Cyan
     }
 }
-
 
 # ----------------------
 # Main Logic
@@ -165,9 +167,9 @@ if (-not (Test-Path $localVersionFile)) {
             $fileName = $components[$comp]
             Download-Component $comp $fileName | Out-Null
         }
-        $remoteVersions.GetEnumerator() |
-            ForEach-Object { "$($_.Key)=$($_.Value)" } |
-            Set-Content -Path $localVersionFile -Force -Encoding UTF8
+		$remoteVersions.GetEnumerator() |
+			ForEach-Object { "$($_.Key)=$($_.Value.TrimEnd('!'))" } |
+			Set-Content -Path $localVersionFile -Force -Encoding UTF8
         Attrib +R $localVersionFile
         Write-Log "Bootstrap complete. Launching loader..." "SUCCESS"
         $loaderPath = Join-Path $ScriptDir $components.loader
@@ -186,6 +188,9 @@ $remoteVersions = Get-RemoteVersions
 
 # Determine updates
 $updatesNeeded = @()
+$autoUpdate = @()
+$interactiveUpdate = @()
+
 foreach ($comp in $components.Keys) {
     $localVer = $localVersions[$comp]
     $remoteVerRaw = $remoteVersions[$comp]
@@ -199,35 +204,73 @@ foreach ($comp in $components.Keys) {
         $remoteVer = $remoteVerRaw
     }
 
-    if ($remoteVer -and ($localVer -ne $remoteVer)) {
+    if ($remoteVer -and ([version]$localVer -ne [version]$remoteVer)) {
         $updatesNeeded += $comp
         Write-Log "$comp update available: current=$localVer, remote=$remoteVerRaw" "WARN"
         Show-PatchNotesByVersion $components[$comp] $localVer $remoteVerRaw
     }
+
+    # Separate auto-update and interactive
+    if ($forceByExcl) { $autoUpdate += $comp } 
+    elseif ($remoteVer -and ([version]$localVer -ne [version]$remoteVer)) { $interactiveUpdate += $comp }
 }
 
-# Separate auto-update (! versions) from interactive
-$autoUpdate = @()
-$interactiveUpdate = @()
-foreach ($comp in $updatesNeeded) {
-    $remoteVerRaw = $remoteVersions[$comp]
-    $localVer = $localVersions[$comp]
+# ----------------------
+# Auto-update ! components first
+# ----------------------
+if ($autoUpdate.Count -gt 0) {
+    foreach ($comp in $autoUpdate) {
+        $fileName = $components[$comp]
 
-    if ($remoteVerRaw -match '^(.*)!$') {
-        $remoteVer = $Matches[1]
-        if ([version]$remoteVer -gt [version]$localVer) {
-            $autoUpdate += $comp
-            Write-Log "$comp has ! version. Will auto-update from $localVer to $remoteVer." "INFO"
-        } else {
-            $interactiveUpdate += $comp
-        }
-    } else {
-        $interactiveUpdate += $comp
+        # Remove legacy files for backward compatibility
+		foreach ($legacy in $legacyComponents.Keys) {
+			if ($legacyComponents[$legacy] -eq $fileName) {
+				if ($comp -eq "launcher") {
+					$legacyPath = Join-Path $BatDir $legacy
+				} else {
+					$legacyPath = Join-Path $ScriptDir $legacy
+			}
+
+			if (Test-Path $legacyPath) {
+				Write-Log "Removing legacy file $legacy (component=$comp)" "INFO"
+				Remove-Item $legacyPath -Force
+			}
+		}
+	}
+
+        $filePath = Join-Path $ScriptDir $fileName
+        if (Test-Path $filePath) { Backup-File $filePath }
+
+        $success = Download-Component $comp $fileName
+        if (-not $success) { Restore-Backup $filePath }
+        else { $localVersions[$comp] = $remoteVersions[$comp].TrimEnd('!') }
     }
+
+    # Save version file
+    if (Test-Path $localVersionFile) { Attrib -R $localVersionFile }
+    $localVersions.GetEnumerator() |
+        ForEach-Object { "$($_.Key)=$($_.Value)" } |
+        Set-Content -Path $localVersionFile -Force -Encoding UTF8
+    Attrib +R $localVersionFile
+
+	if ($autoUpdate -contains "updater") {
+		Write-Log "Updater itself was updated. Restarting..." "INFO"
+		$argsList = @(
+			"-NoProfile",
+			"-ExecutionPolicy Bypass",
+			"-File `"$PSCommandPath`"",
+			"-ScriptDir `"$ScriptDir`"",
+			"-BatDir `"$BatDir`""
+		)
+		Start-Process powershell -ArgumentList $argsList
+		exit
+	}
 }
 
-# Interactive loop for non-forced components
-$toUpdate = $autoUpdate
+# ----------------------
+# Interactive update loop for remaining components
+# ----------------------
+$toUpdate = @()
 $skipAll = $false
 $updateAll = $false
 $i = 0
@@ -262,9 +305,28 @@ if ($interactiveUpdate.Count -gt 0) {
     }
 }
 
-# Perform updates
+# ----------------------
+# Perform interactive updates
+# ----------------------
 foreach ($comp in $toUpdate) {
     $fileName = $components[$comp]
+
+    # Remove legacy files for backward compatibility
+	foreach ($legacy in $legacyComponents.Keys) {
+		if ($legacyComponents[$legacy] -eq $fileName) {
+			if ($comp -eq "launcher") {
+				$legacyPath = Join-Path $BatDir $legacy
+			} else {
+				$legacyPath = Join-Path $ScriptDir $legacy
+		}
+
+		if (Test-Path $legacyPath) {
+			Write-Log "Removing legacy file $legacy (component=$comp)" "INFO"
+			Remove-Item $legacyPath -Force
+			}
+		}
+	}
+
     $filePath = Join-Path $ScriptDir $fileName
     if (Test-Path $filePath) { Backup-File $filePath }
 
@@ -273,14 +335,19 @@ foreach ($comp in $toUpdate) {
     else { $localVersions[$comp] = $remoteVersions[$comp].TrimEnd('!') }
 }
 
-# Save updated local version file
+# Save updated local version file (read-only toggle)
 if (Test-Path $localVersionFile) { Attrib -R $localVersionFile }
 $localVersions.GetEnumerator() |
-    ForEach-Object { "$($_.Key)=$($_.Value)" } |
+    ForEach-Object { 
+        "$($_.Key)=$($_.Value.TrimEnd('!'))"
+    } |
     Set-Content -Path $localVersionFile -Force -Encoding UTF8
+
 Attrib +R $localVersionFile
 
+# ----------------------
 # Launch loader
+# ----------------------
 $loaderPath = Join-Path $ScriptDir $components.loader
 if (Test-Path $loaderPath) {
     Write-Log "Launching loader..." "INFO"
