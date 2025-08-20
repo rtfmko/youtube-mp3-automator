@@ -1,6 +1,6 @@
 ﻿param(
     [string]$ScriptDir,
-	[string]$BatDir
+    [string]$BatDir
 )
 
 # ----------------------
@@ -60,7 +60,7 @@ function Get-RemoteVersions() {
         $lines = $content.Content -split "`n"
         $dict = @{}
         foreach ($line in $lines) {
-            if ($line -match '^\s*(\w+)\s*=\s*([0-9\.]+)') { $dict[$Matches[1]] = $Matches[2] }
+            if ($line -match '^\s*(\w+)\s*=\s*([0-9\.!]+)') { $dict[$Matches[1]] = $Matches[2] }
         }
         return $dict
     } catch {
@@ -82,11 +82,11 @@ function Get-LocalVersions() {
 
 function Download-Component($component, $fileName) {
     $url = "$baseUrl$fileName"
-	if ($component -eq "launcher") {
-		$dest = Join-Path $BatDir $fileName	
-	} else {
-		$dest = Join-Path $ScriptDir $fileName	
-	}
+    if ($component -eq "launcher") {
+        $dest = Join-Path $BatDir $fileName    
+    } else {
+        $dest = Join-Path $ScriptDir $fileName    
+    }
     try {
         Write-Log "Downloading $component from $url ..."
         
@@ -106,28 +106,49 @@ function Download-Component($component, $fileName) {
     }
 }
 
-function Show-PatchNotes($file){
+function Show-PatchNotesByVersion($file, $localVersion, $remoteVersion) {
     $patchFileName = switch ($file) {
-		"youtube-mp3.ps1" { "loader.patch" }
-		"updater.ps1"     { "updater.patch" }
-		"youtube-mp3.bat" { "launcher.patch" }
-		default           { "$file.patch" }
-	}
-	
-	$patchUrl = "$baseUrl" + "patch-notes/$patchFileName"
+        "youtube-downloader.ps1" { "loader.patch" }
+        "youtube-mp3.ps1" { "loader.patch" }
+        "updater.ps1"     { "updater.patch" }
+        "youtube-downloader.bat" { "launcher.patch" }
+        "youtube-mp3.bat" { "launcher.patch" }
+        default           { "$file.patch" }
+    }
+
+    $patchUrl = "$baseUrl" + "patch-notes/$patchFileName"
+
     try {
         $content = Invoke-WebRequest $patchUrl -UseBasicParsing -ErrorAction Stop
         $notes = $content.Content.Trim()
-        if ($notes) {
-            Write-Host "`n📌 Patch notes for ${file}:`n" -ForegroundColor Cyan
-            $notes -split "`n" | ForEach-Object { Write-Host "  $_" -ForegroundColor White }
-        } else {
-            Write-Host "`n📌 Patch notes for ${file}: None`n" -ForegroundColor Cyan
+
+        if (-not $notes) {
+            Write-Host "`n📌 Patch notes for ${file} version ${remoteVersion}: None`n" -ForegroundColor Cyan
+            return
         }
+
+        Write-Host "`n📌 Patch notes for ${file} version ${remoteVersion}:`n" -ForegroundColor Cyan
+
+        $show = $false
+        $currentVersion = $localVersion
+
+        foreach ($line in $notes -split "`n") {
+            if ($line -match '^v([0-9\.]+)') {
+                $ver = $Matches[1]
+                # Если версия больше текущей, начинаем показывать
+                if ([version]$ver -gt [version]$currentVersion) { $show = $true } 
+                else { $show = $false }
+            }
+            if ($show -and $line -notmatch '^v[0-9\.]+') {
+                Write-Host "  $line" -ForegroundColor White
+            }
+        }
+
     } catch {
         Write-Host "`n📌 Patch notes for ${file}: None`n" -ForegroundColor Cyan
     }
 }
+
 
 # ----------------------
 # Main Logic
@@ -135,7 +156,7 @@ function Show-PatchNotes($file){
 Ensure-Folder $ScriptDir
 Ensure-Folder $backupDir
 
-# If no local version file exists, bootstrap loader & updater
+# Bootstrap if no local version
 if (-not (Test-Path $localVersionFile)) {
     Write-Log "Local version file not found. Bootstrapping initial setup..." "WARN"
     $remoteVersions = Get-RemoteVersions
@@ -144,7 +165,6 @@ if (-not (Test-Path $localVersionFile)) {
             $fileName = $components[$comp]
             Download-Component $comp $fileName | Out-Null
         }
-        # Save minimal version file and set read-only
         $remoteVersions.GetEnumerator() |
             ForEach-Object { "$($_.Key)=$($_.Value)" } |
             Set-Content -Path $localVersionFile -Force -Encoding UTF8
@@ -161,47 +181,67 @@ if (-not (Test-Path $localVersionFile)) {
     }
 }
 
-# Parse force flag if any: force=loader,updater,launcher
-$forceComponents = @()
-foreach ($arg in $args) {
-    if ($arg -match '^force=(.+)$') { $forceComponents = $Matches[1].Split(",") }
-}
-
 $localVersions = Get-LocalVersions
 $remoteVersions = Get-RemoteVersions
 
+# Determine updates
 $updatesNeeded = @()
-
 foreach ($comp in $components.Keys) {
     $localVer = $localVersions[$comp]
-    $remoteVer = $remoteVersions[$comp]
+    $remoteVerRaw = $remoteVersions[$comp]
 
-    if ($remoteVer -and ($localVer -ne $remoteVer -or $forceComponents -contains $comp)) {
+    # Check for forced-by-exclamation
+    $forceByExcl = $false
+    if ($remoteVerRaw -match '^(.*)!$') {
+        $remoteVer = $Matches[1]
+        if ([version]$remoteVer -gt [version]$localVer) { $forceByExcl = $true }
+    } else {
+        $remoteVer = $remoteVerRaw
+    }
+
+    if ($remoteVer -and ($localVer -ne $remoteVer)) {
         $updatesNeeded += $comp
-        Write-Log "$comp update available: current=$localVer, remote=$remoteVer" "WARN"
-        Show-PatchNotes $components[$comp]
+        Write-Log "$comp update available: current=$localVer, remote=$remoteVerRaw" "WARN"
+        Show-PatchNotesByVersion $components[$comp] $localVer $remoteVerRaw
     }
 }
 
-if ($updatesNeeded.Count -eq 0) {
-    Write-Log "All components are up-to-date." "SUCCESS"
-} else {
-    # Interactive update loop with proper skip all / update all
-    $toUpdate = @()
-    $skipAll = $false
-    $updateAll = $false
-    $i = 0
+# Separate auto-update (! versions) from interactive
+$autoUpdate = @()
+$interactiveUpdate = @()
+foreach ($comp in $updatesNeeded) {
+    $remoteVerRaw = $remoteVersions[$comp]
+    $localVer = $localVersions[$comp]
 
+    if ($remoteVerRaw -match '^(.*)!$') {
+        $remoteVer = $Matches[1]
+        if ([version]$remoteVer -gt [version]$localVer) {
+            $autoUpdate += $comp
+            Write-Log "$comp has ! version. Will auto-update from $localVer to $remoteVer." "INFO"
+        } else {
+            $interactiveUpdate += $comp
+        }
+    } else {
+        $interactiveUpdate += $comp
+    }
+}
+
+# Interactive loop for non-forced components
+$toUpdate = $autoUpdate
+$skipAll = $false
+$updateAll = $false
+$i = 0
+
+if ($interactiveUpdate.Count -gt 0) {
     Write-Host "`n📌 Update options:`n" -ForegroundColor Cyan
-	Write-Host "   y → Update this component" -ForegroundColor Green
-	Write-Host "   n → Skip this component" -ForegroundColor Yellow
-	Write-Host "   a → Update all remaining components automatically" -ForegroundColor Magenta
-	Write-Host "   s → Skip all remaining components" -ForegroundColor DarkYellow
-	Write-Host "   q → Quit updater`n" -ForegroundColor Red
+    Write-Host "   y → Update this component" -ForegroundColor Green
+    Write-Host "   n → Skip this component" -ForegroundColor Yellow
+    Write-Host "   a → Update all remaining components automatically" -ForegroundColor Magenta
+    Write-Host "   s → Skip all remaining components" -ForegroundColor DarkYellow
+    Write-Host "   q → Quit updater`n" -ForegroundColor Red
 
-
-    while ($i -lt $updatesNeeded.Count) {
-        $comp = $updatesNeeded[$i]
+    while ($i -lt $interactiveUpdate.Count) {
+        $comp = $interactiveUpdate[$i]
 
         if ($skipAll) { $i++; continue }
         if ($updateAll) { $toUpdate += $comp; $i++; continue }
@@ -214,43 +254,33 @@ if ($updatesNeeded.Count -eq 0) {
                 $updateAll = $true
                 $toUpdate += $comp
             }
-            's' { 
-                $skipAll = $true
-            }
-            'q' { 
-				$skipAll = $true
-				break 
-			}
+            's' { $skipAll = $true }
+            'q' { $skipAll = $true; break }
             default { Write-Host "Invalid input. Continue..."; continue }
         }
         $i++
     }
-
-    foreach ($comp in $toUpdate) {
-        $fileName = $components[$comp]
-        $filePath = Join-Path $ScriptDir $fileName
-        if (Test-Path $filePath) { Backup-File $filePath }
-
-        $success = Download-Component $comp $fileName
-        if (-not $success) { Restore-Backup $filePath }
-        else { $localVersions[$comp] = $remoteVersions[$comp] }
-    }
-
-	# Save updated local version file (with read-only toggle)
-		if (Test-Path $localVersionFile) {
-			Attrib -R $localVersionFile
-		}
-
-		$localVersions.GetEnumerator() |
-			ForEach-Object { "$($_.Key)=$($_.Value)" } |
-			Set-Content -Path $localVersionFile -Force -Encoding UTF8
-
-		Attrib +R $localVersionFile
 }
 
-# ----------------------
+# Perform updates
+foreach ($comp in $toUpdate) {
+    $fileName = $components[$comp]
+    $filePath = Join-Path $ScriptDir $fileName
+    if (Test-Path $filePath) { Backup-File $filePath }
+
+    $success = Download-Component $comp $fileName
+    if (-not $success) { Restore-Backup $filePath }
+    else { $localVersions[$comp] = $remoteVersions[$comp].TrimEnd('!') }
+}
+
+# Save updated local version file
+if (Test-Path $localVersionFile) { Attrib -R $localVersionFile }
+$localVersions.GetEnumerator() |
+    ForEach-Object { "$($_.Key)=$($_.Value)" } |
+    Set-Content -Path $localVersionFile -Force -Encoding UTF8
+Attrib +R $localVersionFile
+
 # Launch loader
-# ----------------------
 $loaderPath = Join-Path $ScriptDir $components.loader
 if (Test-Path $loaderPath) {
     Write-Log "Launching loader..." "INFO"
