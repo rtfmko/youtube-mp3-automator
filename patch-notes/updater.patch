@@ -20,3 +20,7 @@ v0.0.5
 - Added check yt-dlp version and update
 - Changed name youtube-mp3.bat to youtube-downloader.bat
 - Changed name youtube-mp3.ps1 to youtube-downloader.ps1
+
+v0.0.6
+- HotFix
+- Changed launch component name
